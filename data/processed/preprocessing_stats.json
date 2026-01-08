@@ -1,0 +1,46 @@
+{
+  "train": {
+    "original": 1000000,
+    "unicode_normalized": 4,
+    "html_cleaned": 214,
+    "whitespace_normalized": 8626,
+    "empty": 0,
+    "punctuation_only": 5402,
+    "length_filtered": 182939,
+    "misaligned": 3687,
+    "language_id_filtered": 0,
+    "duplicates": 15537,
+    "final": 792427
+  },
+  "dev": {
+    "original": 2000,
+    "unicode_normalized": 0,
+    "html_cleaned": 0,
+    "whitespace_normalized": 25,
+    "empty": 0,
+    "punctuation_only": 5,
+    "length_filtered": 161,
+    "misaligned": 9,
+    "language_id_filtered": 0,
+    "duplicates": 0,
+    "final": 1825
+  },
+  "test": {
+    "original": 2000,
+    "unicode_normalized": 0,
+    "html_cleaned": 0,
+    "whitespace_normalized": 23,
+    "empty": 0,
+    "punctuation_only": 8,
+    "length_filtered": 155,
+    "misaligned": 17,
+    "language_id_filtered": 0,
+    "duplicates": 0,
+    "final": 1820
+  },
+  "config": {
+    "min_tokens": 3,
+    "max_tokens": 100,
+    "max_ratio": 3.0
+  }
+}

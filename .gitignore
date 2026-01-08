@@ -205,3 +205,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Claude Code
+CLAUDE.md
+.claude/
+.claude_workspace/
+claude_code_history/
+claude_code_cache/
+.claude_code/
+
+# Dataset
+data/raw/opus-100
+data/processed/opus-100
