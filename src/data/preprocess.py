@@ -208,8 +208,6 @@ def filter_by_length(
     for en, es in zip(en_lines, es_lines):
         en_len = len(en.split())
         es_len = len(es.split())
-        en_chars = len(en)
-        es_chars = len(es)
 
         if min_tokens <= en_len <= max_tokens and min_tokens <= es_len <= max_tokens:
             clean_en.append(en)
@@ -374,7 +372,7 @@ def preprocess_split(
         f"  After punctuation filtering: {len(en_lines):,} (-{num_punct:,}, {num_punct/original_count*100:.2f}%)"
     )
 
-    # Step 6: Filter by length (min and max tokens + char length)
+    # Step 6: Filter by length (min and max tokens)
     en_lines, es_lines, num_length = filter_by_length(
         en_lines,
         es_lines,
@@ -447,12 +445,6 @@ def preprocess_all_splits():
         help="Maximum tokens per sentence (default: 100)",
     )
     parser.add_argument(
-        "--max-char-length",
-        type=int,
-        default=500,
-        help="Maximum character length per sentence (default: 500)",
-    )
-    parser.add_argument(
         "--max-ratio",
         type=float,
         default=3.0,
@@ -464,11 +456,8 @@ def preprocess_all_splits():
     raw_dir = Path(args.raw_dir)
     output_dir = Path(args.output_dir)
 
-    print("=" * 80)
-    print("Starting OPUS-100 EN-ES Data Preprocessing")
-    print("=" * 80)
-    print(f"\nInput directory:  {raw_dir}")
-    print(f"Output directory: {output_dir}")
+    print("\nStarting OPUS-100 EN-ES Data Preprocessing\n")
+
     print(f"Min tokens:       {args.min_tokens}")
     print(f"Max tokens:       {args.max_tokens}")
     print(f"Max ratio:        {args.max_ratio}")
@@ -525,7 +514,7 @@ def preprocess_all_splits():
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(all_stats, f, indent=2)
 
-    print(f"\nStatistics saved to: {stats_file}")
+    print(f"\nPreprocessed data and statistics saved to: {output_dir.parent}")
     print("\nPreprocessing complete!")
 
 
