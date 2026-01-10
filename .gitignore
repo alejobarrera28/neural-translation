@@ -224,5 +224,6 @@ claude_code_cache/
 .claude_code/
 
 # Dataset
-data/raw/opus-100
-data/processed/opus-100
+data/raw/opus-100/*
+data/processed/opus-100/*
+data/vocab/*
