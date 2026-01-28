@@ -227,3 +227,6 @@ claude_code_cache/
 data/raw/opus-100/*
 data/processed/opus-100/*
 data/vocab/*
+
+# Models
+models/*
