@@ -28,9 +28,10 @@ from tqdm import tqdm
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from data.word_tokenizer import WordTokenizer
+from .base import WordEmbedding
 
 
-class PPMI_SVD:
+class PPMI_SVD(WordEmbedding):
     """
     PPMI + SVD word embeddings with distance-weighted co-occurrence.
 
@@ -57,12 +58,11 @@ class PPMI_SVD:
                       "harmonic": Weight = 1/distance
                       "linear": Weight = (window_size - distance + 1) / window_size
         """
-        self.tokenizer = tokenizer
-        self.window_size = window_size
-        self.embedding_dim = embedding_dim
+        super().__init__(tokenizer, embedding_dim, window_size)
         self.weighting = weighting
 
         # Import vocabulary from tokenizer (exclude special tokens)
+        # PPMI_SVD requires re-indexing for dense matrix operations
         self.word2idx: Dict[str, int] = {}
         self.idx2word: Dict[int, str] = {}
         self._import_vocabulary()
@@ -280,13 +280,15 @@ class PPMI_SVD:
         Args:
             file_paths: List of text files for training
         """
-        print("\n" + "=" * 60)
-        print("Training PPMI-SVD Embeddings")
-        print("=" * 60)
-        print(f"Vocab size: {len(self.word2idx):,}")
-        print(f"Window size: {self.window_size}")
-        print(f"Embedding dim: {self.embedding_dim}")
-        print(f"Weighting: {self.weighting}")
+        self._print_training_header(
+            "PPMI-SVD",
+            **{
+                "Vocab size": f"{len(self.word2idx):,}",
+                "Window size": self.window_size,
+                "Embedding dim": self.embedding_dim,
+                "Weighting": self.weighting,
+            },
+        )
 
         # Step 1: Build weighted co-occurrence matrix
         cooc_matrix = self._build_cooccurrence_matrix(file_paths)
@@ -297,9 +299,7 @@ class PPMI_SVD:
         # Step 3: Apply truncated SVD
         self.embeddings = self._apply_svd(ppmi_matrix)
 
-        print("\n" + "=" * 60)
-        print("Training complete!")
-        print("=" * 60)
+        self._print_training_footer()
 
     def get_embedding(self, word: str) -> Optional[np.ndarray]:
         """
@@ -333,52 +333,28 @@ class PPMI_SVD:
         if embedding is None:
             return []
 
-        # Normalize embeddings (add epsilon to avoid division by zero)
-        embedding_norm_val = np.linalg.norm(embedding)
-        if embedding_norm_val < 1e-10:
-            return []
-
-        embedding_norm = embedding / embedding_norm_val
-
-        # Normalize all embeddings
-        norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-10)  # Avoid division by zero
-        embeddings_norm = self.embeddings / norms
-
-        # Compute cosine similarities
-        similarities = embeddings_norm @ embedding_norm
-
-        # Get top-k (excluding the word itself)
+        # Use base class template method
         word_idx = self.word2idx[word.lower()]
-        similarities[word_idx] = -np.inf  # Exclude self
+        results = self._find_top_k_similar(
+            embedding, self.embeddings, top_k, exclude_indices={word_idx}
+        )
 
-        top_indices = np.argsort(similarities)[::-1][:top_k]
+        # Convert indices to words
+        return [(self.idx2word[idx], similarity) for idx, similarity in results]
 
-        return [(self.idx2word[idx], similarities[idx]) for idx in top_indices]
-
-    def save(self, path: Path) -> None:
+    def _get_save_state(self) -> dict:
         """
-        Save model to disk.
+        Return PPMI_SVD-specific state for serialization.
 
-        Args:
-            path: Path to save model
+        Returns:
+            Dictionary of model-specific state
         """
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        state = {
-            "tokenizer": self.tokenizer,
-            "window_size": self.window_size,
-            "embedding_dim": self.embedding_dim,
+        return {
             "weighting": self.weighting,
             "word2idx": self.word2idx,
             "idx2word": self.idx2word,
             "embeddings": self.embeddings,
         }
-
-        with open(path, "wb") as f:
-            pickle.dump(state, f)
-
-        print(f"\nModel saved to: {path}")
 
     @classmethod
     def load(cls, path: Path) -> "PPMI_SVD":

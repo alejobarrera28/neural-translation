@@ -25,8 +25,10 @@ from collections import Counter
 from tqdm import tqdm
 import math
 
+from .base import WordEmbedding
 
-class Word2Vec:
+
+class Word2Vec(WordEmbedding):
     """
     Skip-Gram with Negative Sampling (SGNS) implementation.
 
@@ -44,6 +46,7 @@ class Word2Vec:
         learning_rate: float = 0.025,
         min_learning_rate: float = 0.0001,
         batch_size: int = 512,
+        tokenizer=None,  # Optional WordTokenizer, added for base class compatibility
     ):
         """
         Initialize Word2Vec model.
@@ -57,10 +60,12 @@ class Word2Vec:
             learning_rate: Initial learning rate
             min_learning_rate: Minimum learning rate for decay
             batch_size: Number of training pairs to process in parallel
+            tokenizer: Optional WordTokenizer (for base class compatibility)
         """
+        # Initialize base class (tokenizer can be None initially)
+        super().__init__(tokenizer, embedding_dim, window_size)
+
         self.vocab_size = vocab_size
-        self.embedding_dim = embedding_dim
-        self.window_size = window_size
         self.num_negative_samples = num_negative_samples
         self.subsample_threshold = subsample_threshold
         self.learning_rate = learning_rate
@@ -366,15 +371,6 @@ class Word2Vec:
         """
         return self.W[word_idx]
 
-    def get_embeddings(self) -> np.ndarray:
-        """
-        Get all word embeddings.
-
-        Returns:
-            Embedding matrix (vocab_size, dim)
-        """
-        return self.W
-
     def most_similar(
         self, word_idx: int, top_k: int = 10, exclude: Optional[set] = None
     ) -> List[Tuple[int, float]]:
@@ -393,38 +389,21 @@ class Word2Vec:
             exclude = set()
         exclude.add(word_idx)  # Exclude the word itself
 
-        # Get query embedding and normalize
+        # Get query embedding and use base class template method
         query = self.W[word_idx]
-        query_norm = query / (np.linalg.norm(query) + 1e-10)
+        return self._find_top_k_similar(query, self.W, top_k, exclude_indices=exclude)
 
-        # Compute cosine similarities
-        W_norm = self.W / (np.linalg.norm(self.W, axis=1, keepdims=True) + 1e-10)
-        similarities = np.dot(W_norm, query_norm)
-
-        # Mask excluded words
-        for idx in exclude:
-            similarities[idx] = -np.inf
-
-        # Get top-k
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        results = [(idx, similarities[idx]) for idx in top_indices]
-
-        return results
-
-    def save(self, path: Path):
+    def _get_save_state(self) -> dict:
         """
-        Save model to disk.
+        Return Word2Vec-specific state for serialization.
 
-        Args:
-            path: Path where model will be saved
+        Returns:
+            Dictionary of model-specific state
         """
-        path.parent.mkdir(parents=True, exist_ok=True)
-        state = {
+        return {
             "W": self.W,
             "C": self.C,
             "vocab_size": self.vocab_size,
-            "embedding_dim": self.embedding_dim,
-            "window_size": self.window_size,
             "num_negative_samples": self.num_negative_samples,
             "subsample_threshold": self.subsample_threshold,
             "learning_rate": self.learning_rate,
@@ -433,8 +412,6 @@ class Word2Vec:
             "batch_size": self.batch_size,
             "word_counts": self.word_counts,
         }
-        with open(path, "wb") as f:
-            pickle.dump(state, f)
 
     @classmethod
     def load(cls, path: Path) -> "Word2Vec":
@@ -458,9 +435,8 @@ class Word2Vec:
             subsample_threshold=state["subsample_threshold"],
             learning_rate=state["learning_rate"],
             min_learning_rate=state["min_learning_rate"],
-            batch_size=state.get(
-                "batch_size", 512
-            ),  # Default for backward compatibility
+            batch_size=state.get("batch_size", 512),  # Default for backward compatibility
+            tokenizer=state.get("tokenizer"),  # Load tokenizer if present
         )
         model.W = state["W"]
         model.C = state["C"]
