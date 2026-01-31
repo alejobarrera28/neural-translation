@@ -25,7 +25,10 @@ from collections import Counter
 from tqdm import tqdm
 import math
 
-from .base import WordEmbedding
+# Add parent directories to path for imports
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from embeddings.models.base import WordEmbedding
 
 
 class Word2Vec(WordEmbedding):
@@ -305,7 +308,7 @@ class Word2Vec(WordEmbedding):
         self,
         corpus: List[List[int]],
         word_counts: Counter,
-        epochs: int = 5,
+        epochs: int = 10,
         special_token_ids: Optional[set] = None,
     ):
         """
@@ -453,7 +456,7 @@ def train_word2vec_from_tokenizer(
     window_size: int = 5,
     num_negative_samples: int = 5,
     subsample_threshold: float = 1e-5,
-    epochs: int = 5,
+    epochs: int = 10,
     learning_rate: float = 0.025,
     min_learning_rate: float = 0.0001,
     batch_size: int = 512,
@@ -507,6 +510,7 @@ def train_word2vec_from_tokenizer(
         learning_rate=learning_rate,
         min_learning_rate=min_learning_rate,
         batch_size=batch_size,
+        tokenizer=tokenizer,
     )
 
     model.train(
@@ -550,7 +554,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="models/word2vec.pkl",
+        default="models/embeddings/word2vec.pkl",
         help="Path to save trained Word2Vec model",
     )
     parser.add_argument(
@@ -580,8 +584,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=5,
-        help="Number of training epochs (default: 5)",
+        default=10,
+        help="Number of training epochs (default: 10)",
     )
     parser.add_argument(
         "--learning-rate",

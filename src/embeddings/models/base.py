@@ -8,7 +8,7 @@ vocabulary management strategies.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Tuple, Union
 import numpy as np
 import pickle
 
@@ -138,6 +138,80 @@ class WordEmbedding(ABC):
         top_indices = np.argsort(similarities)[::-1][:top_k]
 
         return [(int(idx), float(similarities[idx])) for idx in top_indices]
+
+    def analogy(
+        self,
+        positive: List[np.ndarray],
+        negative: List[np.ndarray],
+        embeddings: np.ndarray,
+        top_k: int = 1,
+        exclude_indices: Optional[set] = None,
+    ) -> list:
+        """
+        Solve word analogies using vector arithmetic.
+
+        Example: king - man + woman = queen
+        positive = [king_vec, woman_vec], negative = [man_vec]
+
+        Args:
+            positive: List of embedding vectors to add
+            negative: List of embedding vectors to subtract
+            embeddings: Embedding matrix to search
+            top_k: Number of results to return
+            exclude_indices: Indices to exclude from results
+
+        Returns:
+            List of (index, similarity) tuples
+        """
+        # Compute analogy vector: sum(positive) - sum(negative)
+        query = np.sum(positive, axis=0) - np.sum(negative, axis=0)
+
+        return self._find_top_k_similar(
+            query, embeddings, top_k, exclude_indices=exclude_indices
+        )
+
+    def project_to_2d(
+        self, embeddings: np.ndarray, method: str = "pca"
+    ) -> np.ndarray:
+        """
+        Project embeddings to 2D for visualization.
+
+        Args:
+            embeddings: Embedding matrix (n, dim)
+            method: Projection method ('pca' or 'tsne')
+
+        Returns:
+            2D coordinates (n, 2)
+        """
+        if method == "pca":
+            from sklearn.decomposition import PCA
+
+            pca = PCA(n_components=2)
+            return pca.fit_transform(embeddings)
+
+        elif method == "tsne":
+            from sklearn.manifold import TSNE
+
+            tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(embeddings) - 1))
+            return tsne.fit_transform(embeddings)
+
+        else:
+            raise ValueError(f"Unknown projection method: {method}")
+
+
+    @abstractmethod
+    def _get_save_state(self) -> dict:
+        """
+        Return model-specific state for serialization.
+
+        Subclasses should return a dictionary containing all state needed
+        to restore the model beyond the base attributes (tokenizer,
+        embedding_dim, window_size).
+
+        Returns:
+            Dictionary of model-specific state
+        """
+        pass
 
     def save(self, path: Path) -> None:
         """

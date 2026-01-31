@@ -28,7 +28,7 @@ from tqdm import tqdm
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from data.word_tokenizer import WordTokenizer
-from .base import WordEmbedding
+from embeddings.models.base import WordEmbedding
 
 
 class PPMI_SVD(WordEmbedding):
