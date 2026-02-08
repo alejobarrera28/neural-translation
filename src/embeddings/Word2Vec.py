@@ -28,7 +28,7 @@ import math
 # Add parent directories to path for imports
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from embeddings.models.base import WordEmbedding
+from src.embeddings.base import WordEmbedding
 
 
 class Word2Vec(WordEmbedding):
@@ -308,7 +308,7 @@ class Word2Vec(WordEmbedding):
         self,
         corpus: List[List[int]],
         word_counts: Counter,
-        epochs: int = 10,
+        epochs: int = 8,
         special_token_ids: Optional[set] = None,
     ):
         """
@@ -456,7 +456,7 @@ def train_word2vec_from_tokenizer(
     window_size: int = 5,
     num_negative_samples: int = 5,
     subsample_threshold: float = 1e-5,
-    epochs: int = 10,
+    epochs: int = 8,
     learning_rate: float = 0.025,
     min_learning_rate: float = 0.0001,
     batch_size: int = 512,
@@ -584,8 +584,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=10,
-        help="Number of training epochs (default: 10)",
+        default=8,
+        help="Number of training epochs (default: 8)",
     )
     parser.add_argument(
         "--learning-rate",

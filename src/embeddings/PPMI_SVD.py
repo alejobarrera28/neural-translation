@@ -6,9 +6,10 @@ co-occurrence counts followed by truncated SVD dimensionality reduction.
 
 METHODOLOGY:
     1. Use pre-trained WordTokenizer vocabulary
-    2. Build co-occurrence matrix with sliding window and distance weighting
-    3. Compute PMI and clip negative values (PPMI)
-    4. Apply truncated SVD to get dense embeddings
+    2. Tokenize corpus using WordTokenizer (ensures consistency with vocabulary)
+    3. Build co-occurrence matrix with sliding window and distance weighting
+    4. Compute PMI and clip negative values (PPMI)
+    5. Apply truncated SVD to get dense embeddings
 
 REQUIRED COMPONENTS:
     - Vocabulary cutoff: Limit to top-N words (prevents matrix explosion)
@@ -27,8 +28,8 @@ from tqdm import tqdm
 
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from data.word_tokenizer import WordTokenizer
-from embeddings.models.base import WordEmbedding
+from src.data.word_tokenizer import WordTokenizer
+from src.embeddings.base import WordEmbedding
 
 
 class PPMI_SVD(WordEmbedding):
@@ -132,7 +133,8 @@ class PPMI_SVD(WordEmbedding):
 
             with open(file_path, "r", encoding="utf-8") as f:
                 for line in tqdm(f, total=num_lines, desc="  Processing lines"):
-                    words = line.strip().lower().split()
+                    # Use tokenizer for consistent preprocessing with vocabulary
+                    words = self.tokenizer._tokenize(line.strip())
 
                     # Convert to indices, skip out-of-vocab words
                     indices = [

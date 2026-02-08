@@ -59,16 +59,22 @@ class WordTokenizer:
 
     def _tokenize(self, text: str) -> List[str]:
         """
-        Split text into words.
+        Split text into words and strip punctuation.
 
         Args:
             text: Input text to tokenize
 
         Returns:
-            List of word tokens
+            List of word tokens with punctuation removed
         """
         if self.lowercase:
             text = text.lower()
+
+        # Strip common punctuation from text
+        import string
+        translator = str.maketrans('', '', string.punctuation)
+        text = text.translate(translator)
+
         return text.strip().split()
 
     def train(self, file_paths: List[Path]) -> None:
