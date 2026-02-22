@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from tqdm import tqdm
 import sys
+import csv
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -19,6 +20,33 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data.bpe_tokenizer import BPETokenizer
 from src.data.dataset import create_translation_dataloaders
 from src.utils import count_parameters, save_checkpoint
+
+
+def compute_gradient_norms(model: nn.Module) -> tuple[float, float, float]:
+    """
+    Compute gradient norms for training history logging.
+
+    Args:
+        model: Model to analyze
+
+    Returns:
+        Tuple of (total_norm, encoder_norm, decoder_norm)
+    """
+    total_norm = 0.0
+    encoder_norm_sq = 0.0
+    decoder_norm_sq = 0.0
+
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            param_norm = param.grad.data.norm(2).item()
+            total_norm += param_norm ** 2
+
+            if 'encoder' in name:
+                encoder_norm_sq += param_norm ** 2
+            elif 'decoder' in name:
+                decoder_norm_sq += param_norm ** 2
+
+    return total_norm ** 0.5, encoder_norm_sq ** 0.5, decoder_norm_sq ** 0.5
 
 
 def train_epoch(
@@ -30,7 +58,8 @@ def train_epoch(
     pad_idx: int,
     scaler=None,
     use_amp: bool = False,
-) -> float:
+    log_gradients: bool = False,
+) -> tuple:
     """
     Train for one epoch using maximum likelihood (teacher forcing).
 
@@ -43,12 +72,15 @@ def train_epoch(
         pad_idx: Padding token index
         scaler: GradScaler for mixed precision training
         use_amp: Whether to use automatic mixed precision
+        log_gradients: Whether to compute gradient norms for logging
 
     Returns:
-        Average loss for the epoch
+        Tuple of (average_loss, gradient_norms) where gradient_norms is None if log_gradients=False
+        gradient_norms is (total_norm, encoder_norm, decoder_norm) if computed
     """
     model.train()
     epoch_loss = 0
+    gradient_norms = None
 
     for src, src_lengths, tgt, tgt_lengths in tqdm(dataloader, desc="Training"):
         # Move to device
@@ -80,12 +112,22 @@ def train_epoch(
             if scaler is not None:
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
+
+                # Compute gradient norms (before clipping, on first batch)
+                if log_gradients and gradient_norms is None:
+                    gradient_norms = compute_gradient_norms(model)
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 # MPS: no scaler needed
                 loss.backward()
+
+                # Compute gradient norms (before clipping, on first batch)
+                if log_gradients and gradient_norms is None:
+                    gradient_norms = compute_gradient_norms(model)
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
         else:
@@ -99,6 +141,10 @@ def train_epoch(
             # Backward pass
             loss.backward()
 
+            # Compute gradient norms (before clipping, on first batch)
+            if log_gradients and gradient_norms is None:
+                gradient_norms = compute_gradient_norms(model)
+
             # Gradient clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
@@ -107,7 +153,7 @@ def train_epoch(
 
         epoch_loss += loss.item()
 
-    return epoch_loss / len(dataloader)
+    return epoch_loss / len(dataloader), gradient_norms
 
 
 def evaluate(
@@ -288,6 +334,15 @@ def train(
     criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+    # Setup training history logging
+    history_path = output_dir / f"{model_name}_history.csv"
+    with open(history_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['epoch', 'train_loss', 'val_loss', 'learning_rate',
+                        'grad_norm_total', 'grad_norm_encoder', 'grad_norm_decoder'])
+
+    print(f"Training history will be saved to: {history_path}")
+
     # Training loop
     print("\nStarting training...\n")
     best_val_loss = float("inf")
@@ -296,7 +351,7 @@ def train(
         print(f"Epoch {epoch + 1}/{epochs}")
 
         # Train
-        train_loss = train_epoch(
+        train_loss, grad_norms = train_epoch(
             model,
             train_loader,
             optimizer,
@@ -305,12 +360,39 @@ def train(
             pad_idx,
             scaler,
             use_amp,
+            log_gradients=True,
         )
 
         # Validate
         val_loss = evaluate(model, val_loader, criterion, device, pad_idx, use_amp)
 
+        # Display metrics
         print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+
+        # Log training history to CSV
+        current_lr = optimizer.param_groups[0]['lr']
+        with open(history_path, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if grad_norms:
+                total_norm, encoder_norm, decoder_norm = grad_norms
+                writer.writerow([
+                    epoch + 1,
+                    f"{train_loss:.6f}",
+                    f"{val_loss:.6f}",
+                    f"{current_lr:.6f}",
+                    f"{total_norm:.6f}",
+                    f"{encoder_norm:.6f}",
+                    f"{decoder_norm:.6f}",
+                ])
+            else:
+                # If gradient logging disabled, still log other metrics
+                writer.writerow([
+                    epoch + 1,
+                    f"{train_loss:.6f}",
+                    f"{val_loss:.6f}",
+                    f"{current_lr:.6f}",
+                    "", "", ""  # Empty gradient columns
+                ])
 
         # Save checkpoint
         checkpoint_path = output_dir / f"{model_name}_epoch_{epoch+1}.pt"
