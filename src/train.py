@@ -316,8 +316,11 @@ def train(
             vocab_size, embedding_dim, hidden_dim, num_layers, dropout, pad_idx
         )
     elif model_name == "lstm":
-        # TODO: Import LSTM model when implemented
-        raise NotImplementedError("LSTM model not yet implemented")
+        from src.models.lstm_seq2seq import LSTMSeq2Seq
+
+        model = LSTMSeq2Seq(
+            vocab_size, embedding_dim, hidden_dim, num_layers, dropout, pad_idx
+        )
     elif model_name == "attention":
         # TODO: Import Attention model when implemented
         raise NotImplementedError("Attention model not yet implemented")

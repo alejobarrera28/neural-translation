@@ -166,8 +166,18 @@ def evaluate(
             pad_idx=pad_idx,
         )
     elif model_name == "lstm":
-        # TODO: Import LSTM model
-        raise NotImplementedError("LSTM model not yet implemented")
+        from src.models.lstm_seq2seq import LSTMSeq2Seq
+
+        # Extract model hyperparameters from checkpoint
+        model_config = checkpoint.get("model_config", {})
+        model = LSTMSeq2Seq(
+            vocab_size=vocab_size,
+            embedding_dim=model_config.get("embedding_dim", 256),
+            hidden_dim=model_config.get("hidden_dim", 512),
+            num_layers=model_config.get("num_layers", 2),
+            dropout=model_config.get("dropout", 0.1),
+            pad_idx=pad_idx,
+        )
     elif model_name == "attention":
         # TODO: Import Attention model
         raise NotImplementedError("Attention model not yet implemented")
