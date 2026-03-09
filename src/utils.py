@@ -65,6 +65,68 @@ def greedy_decode(
     return output
 
 
+def greedy_decode_attention(
+    model,
+    src: torch.Tensor,
+    src_lengths: torch.Tensor,
+    max_len: int,
+    bos_idx: int,
+    eos_idx: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """
+    Greedy decoding for attention-based sequence generation.
+
+    Args:
+        model: Attention Seq2Seq model with encode() method
+        src: Source sequences (batch_size, src_len)
+        src_lengths: Source lengths (batch_size,)
+        max_len: Maximum generation length
+        bos_idx: Index of BOS token
+        eos_idx: Index of EOS token
+        device: Device for computation
+
+    Returns:
+        Generated sequences (batch_size, max_len)
+    """
+    batch_size = src.size(0)
+
+    # Encode source once (returns encoder_outputs and hidden state)
+    encoder_outputs, hidden = model.encode(src, src_lengths)
+
+    # Create padding mask
+    mask = model.create_mask(src)
+
+    # Initialize output with BOS token
+    output = torch.full((batch_size, 1), bos_idx, dtype=torch.long, device=device)
+
+    # Track which sequences have finished (encountered EOS)
+    finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+    for _ in range(max_len - 1):
+        # Pass only the last token to decoder (not the entire sequence)
+        # This prevents reprocessing and hidden state corruption
+        last_token = output[:, -1:] if output.size(1) > 0 else output
+
+        # Decoder with attention requires encoder_outputs and mask
+        logits, hidden, _ = model.decoder(last_token, hidden, encoder_outputs, mask)
+
+        # Get most likely token (logits is now (batch_size, 1, vocab_size))
+        next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)  # (batch_size, 1)
+
+        # Append to output
+        output = torch.cat([output, next_token], dim=1)
+
+        # Mark sequences that generated EOS
+        finished |= next_token.squeeze(-1) == eos_idx
+
+        # Stop if all sequences finished
+        if finished.all():
+            break
+
+    return output
+
+
 def beam_search_decode(
     model,
     src: torch.Tensor,
@@ -153,6 +215,100 @@ def beam_search_decode(
         return beams[0][0]
 
 
+def beam_search_decode_attention(
+    model,
+    src: torch.Tensor,
+    src_lengths: torch.Tensor,
+    max_len: int,
+    bos_idx: int,
+    eos_idx: int,
+    beam_width: int,
+    device: torch.device,
+    length_penalty: float = 1.0,
+) -> torch.Tensor:
+    """
+    Beam search decoding for attention-based sequence generation.
+
+    Args:
+        model: Attention Seq2Seq model with encode() method
+        src: Source sequences (batch_size, src_len) - NOTE: batch_size must be 1
+        src_lengths: Source lengths (batch_size,)
+        max_len: Maximum generation length
+        bos_idx: Index of BOS token
+        eos_idx: Index of EOS token
+        beam_width: Number of beams
+        device: Device for computation
+        length_penalty: Length penalty factor (alpha in Google NMT)
+
+    Returns:
+        Best generated sequence (1, seq_len)
+    """
+    assert src.size(0) == 1, "Beam search only supports batch_size=1"
+
+    # Encode source once (returns encoder_outputs and hidden state)
+    encoder_outputs, hidden = model.encode(src, src_lengths)
+
+    # Create padding mask
+    mask = model.create_mask(src)
+
+    # Initialize beams with BOS token
+    # Each beam: (sequence, score, hidden_state)
+    beams = [(torch.tensor([[bos_idx]], device=device), 0.0, hidden)]
+    finished_beams = []
+
+    for _ in range(max_len - 1):
+        candidates = []
+
+        for seq, score, h in beams:
+            # Skip if this beam already generated EOS
+            if seq[0, -1].item() == eos_idx:
+                finished_beams.append((seq, score, h))
+                continue
+
+            # Pass only the last token to decoder (not the entire sequence)
+            last_token = seq[:, -1:]
+
+            # Decoder with attention requires encoder_outputs and mask
+            logits, new_hidden, _ = model.decoder(last_token, h, encoder_outputs, mask)
+            log_probs = F.log_softmax(logits[:, -1, :], dim=-1)  # (1, vocab_size)
+
+            # Get top-k tokens
+            top_log_probs, top_indices = log_probs.topk(beam_width, dim=-1)
+
+            # Create new candidate beams
+            for k in range(beam_width):
+                token = top_indices[0, k].unsqueeze(0).unsqueeze(0)  # (1, 1)
+                token_score = top_log_probs[0, k].item()
+
+                new_seq = torch.cat([seq, token], dim=1)
+                new_score = score + token_score
+
+                candidates.append((new_seq, new_score, new_hidden))
+
+        # Select top beam_width candidates
+        # Apply length penalty: score / (length^alpha)
+        candidates.sort(
+            key=lambda x: x[1] / (x[0].size(1) ** length_penalty), reverse=True
+        )
+        beams = candidates[:beam_width]
+
+        # Stop if all beams finished
+        if len(beams) == 0:
+            break
+
+    # Add remaining beams to finished
+    finished_beams.extend(beams)
+
+    # Return best beam
+    if finished_beams:
+        best_beam = max(
+            finished_beams, key=lambda x: x[1] / (x[0].size(1) ** length_penalty)
+        )
+        return best_beam[0]
+    else:
+        return beams[0][0]
+
+
 def compute_bleu(
     predictions: List[str],
     references: List[str],
@@ -198,7 +354,7 @@ def compute_bleu(
     total_ref_len = 0
 
     # Track matches and counts per n-gram order
-    n_gram_stats = {n: {'matches': 0, 'total': 0} for n in range(1, max_n + 1)}
+    n_gram_stats = {n: {"matches": 0, "total": 0} for n in range(1, max_n + 1)}
 
     for pred, ref in zip(predictions, references):
         # Basic tokenization: split on whitespace
@@ -218,10 +374,10 @@ def compute_bleu(
             # Count clipped matches (clip to reference counts per sentence)
             for ngram, pred_count in pred_ngrams.items():
                 ref_count = ref_ngrams.get(ngram, 0)
-                n_gram_stats[n]['matches'] += min(pred_count, ref_count)
+                n_gram_stats[n]["matches"] += min(pred_count, ref_count)
 
             # Total prediction n-grams
-            n_gram_stats[n]['total'] += sum(pred_ngrams.values())
+            n_gram_stats[n]["total"] += sum(pred_ngrams.values())
 
     # Edge case: empty after tokenization
     if total_pred_len == 0 or total_ref_len == 0:
@@ -231,8 +387,8 @@ def compute_bleu(
     log_precisions = []
 
     for n in range(1, max_n + 1):
-        matches = n_gram_stats[n]['matches']
-        total = n_gram_stats[n]['total']
+        matches = n_gram_stats[n]["matches"]
+        total = n_gram_stats[n]["total"]
 
         # Edge case: no n-grams of this length (e.g., prediction too short)
         if total == 0:

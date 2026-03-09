@@ -16,7 +16,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data.bpe_tokenizer import BPETokenizer
 from src.data.dataset import TranslationDataset, collate_fn
-from src.utils import greedy_decode, beam_search_decode, compute_bleu, load_checkpoint
+from src.utils import (
+    greedy_decode,
+    beam_search_decode,
+    greedy_decode_attention,
+    beam_search_decode_attention,
+    compute_bleu,
+    load_checkpoint,
+)
 
 
 def translate_dataset(
@@ -27,6 +34,7 @@ def translate_dataset(
     max_len: int = 100,
     batch_size: int = 1,
     beam_width: int = 1,
+    is_attention: bool = False,
 ) -> tuple[list[str], list[str]]:
     """
     Translate entire dataset.
@@ -67,20 +75,37 @@ def translate_dataset(
             # Generate translation
             if beam_width > 1:
                 assert batch_size == 1, "Beam search requires batch_size=1"
-                output = beam_search_decode(
-                    model,
-                    src,
-                    src_lengths,
-                    max_len,
-                    bos_idx,
-                    eos_idx,
-                    beam_width,
-                    device,
-                )
+                if is_attention:
+                    output = beam_search_decode_attention(
+                        model,
+                        src,
+                        src_lengths,
+                        max_len,
+                        bos_idx,
+                        eos_idx,
+                        beam_width,
+                        device,
+                    )
+                else:
+                    output = beam_search_decode(
+                        model,
+                        src,
+                        src_lengths,
+                        max_len,
+                        bos_idx,
+                        eos_idx,
+                        beam_width,
+                        device,
+                    )
             else:
-                output = greedy_decode(
-                    model, src, src_lengths, max_len, bos_idx, eos_idx, device
-                )
+                if is_attention:
+                    output = greedy_decode_attention(
+                        model, src, src_lengths, max_len, bos_idx, eos_idx, device
+                    )
+                else:
+                    output = greedy_decode(
+                        model, src, src_lengths, max_len, bos_idx, eos_idx, device
+                    )
 
             # Decode predictions
             for i in range(output.size(0)):
@@ -179,8 +204,18 @@ def evaluate(
             pad_idx=pad_idx,
         )
     elif model_name == "attention":
-        # TODO: Import Attention model
-        raise NotImplementedError("Attention model not yet implemented")
+        from src.models.attention_seq2seq import AttentionSeq2Seq
+
+        # Extract model hyperparameters from checkpoint
+        model_config = checkpoint.get("model_config", {})
+        model = AttentionSeq2Seq(
+            vocab_size=vocab_size,
+            embedding_dim=model_config.get("embedding_dim", 256),
+            hidden_dim=model_config.get("hidden_dim", 512),
+            num_layers=model_config.get("num_layers", 2),
+            dropout=model_config.get("dropout", 0.1),
+            pad_idx=pad_idx,
+        )
     elif model_name == "transformer":
         # TODO: Import Transformer model
         raise NotImplementedError("Transformer model not yet implemented")
@@ -195,8 +230,9 @@ def evaluate(
     # Translate
     print(f"\nTranslating test set (beam_width={beam_width})...")
     batch_size = 1 if beam_width > 1 else 32
+    is_attention = model_name == "attention"
     predictions, references = translate_dataset(
-        model, test_dataset, tokenizer, device, max_len, batch_size, beam_width
+        model, test_dataset, tokenizer, device, max_len, batch_size, beam_width, is_attention
     )
 
     # Compute BLEU

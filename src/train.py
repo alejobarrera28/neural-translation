@@ -268,16 +268,18 @@ def train(
     scaler = None
     device_type = str(device).split(':')[0]  # 'mps', 'cuda', or 'cpu'
 
-    if use_amp and device_type != "cpu":
-        if device_type == "cuda":
-            scaler = torch.amp.GradScaler('cuda')
-        elif device_type == "mps":
-            # MPS doesn't use GradScaler, just autocast
-            scaler = None
+    if use_amp and device_type == "cuda":
+        scaler = torch.amp.GradScaler('cuda')
         amp_status = "Enabled"
     else:
-        use_amp = False  # Disable AMP for CPU
-        amp_status = "Disabled" if device_type == "cpu" else "Disabled (user)"
+        # Disable AMP for MPS (type incompatibility) and CPU (no benefit)
+        use_amp = False
+        if device_type == "mps":
+            amp_status = "Disabled (MPS incompatibility)"
+        elif device_type == "cpu":
+            amp_status = "Disabled (CPU)"
+        else:
+            amp_status = "Disabled (user)"
 
     print("\n" + "=" * 60)
     print(f"Training {model_name.upper()} Seq2Seq Model")
@@ -322,8 +324,11 @@ def train(
             vocab_size, embedding_dim, hidden_dim, num_layers, dropout, pad_idx
         )
     elif model_name == "attention":
-        # TODO: Import Attention model when implemented
-        raise NotImplementedError("Attention model not yet implemented")
+        from src.models.attention_seq2seq import AttentionSeq2Seq
+
+        model = AttentionSeq2Seq(
+            vocab_size, embedding_dim, hidden_dim, num_layers, dropout, pad_idx
+        )
     elif model_name == "transformer":
         # TODO: Import Transformer model when implemented
         raise NotImplementedError("Transformer model not yet implemented")
