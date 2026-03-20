@@ -424,6 +424,10 @@ class BPETokenizer:
             # Record this merge operation for later use during encoding
             self.merges.append((best_pair, replacement))
 
+            # Remove the merged pair from consideration
+            if best_pair in pairs:
+                del pairs[best_pair]
+
             # Update progress bar
             pbar.set_postfix_str(f"freq={best_freq}")
 
@@ -443,6 +447,12 @@ class BPETokenizer:
         final_tokens = set()
         for word in vocab.keys():
             final_tokens.update(word)
+
+        # Also add all intermediate merge tokens
+        for (token1, token2), merged_token in self.merges:
+            final_tokens.add(token1)
+            final_tokens.add(token2)
+            final_tokens.add(merged_token)
 
         # Add tokens to mappings (special tokens already added in __init__)
         for token in sorted(final_tokens):
